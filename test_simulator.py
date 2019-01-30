@@ -37,7 +37,7 @@ ITERATIONS = 3
 
 MAX_BAR_CHARS = 25
 CLEAR_PING_SCRIPT = """
-ChromeUtils.import("resource://gre/modules/TelemetrySend.jsm");
+const { TelemetrySend } = ChromeUtils.import("resource://gre/modules/TelemetrySend.jsm");
 TelemetrySend.clearCurrentPings();
 """
 INTERACT_SCRIPT = """
@@ -121,7 +121,7 @@ new Promise(async (resolve, reject) => {
 }).then(() => { resolve(1) });
 """
 GET_PING_SCRIPT = """
-ChromeUtils.import("resource://gre/modules/TelemetryController.jsm");
+const { TelemetryController } = ChromeUtils.import("resource://gre/modules/TelemetryController.jsm");
 return TelemetryController.getCurrentPingData(true);
 """
 
