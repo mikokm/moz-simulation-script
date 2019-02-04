@@ -16,30 +16,41 @@ from marionette_driver.errors import InsecureCertificateException
 # Change these parameters for your test
 
 PAGE_SET = "sets/alexa50.json"
+#PAGE_SET = "sets/top5.json"
+#PAGE_SET = "sets/single-page.json"
+#PAGE_SET = "sets/two.json"
 HISTOGRAMS = [
-    ("CHECKERBOARD_PEAK", "gpu"),
-    ("CHECKERBOARD_SEVERITY", "gpu"),
-    ("CHECKERBOARD_DURATION", "gpu"),
-    ("COMPOSITE_TIME", "gpu"),
-    ("CONTENT_FRAME_TIME", "gpu"),
-    ("WR_RENDER_TIME", "gpu"),
-    ("WR_SCENEBUILD_TIME", "gpu"),
-    ("WR_SCENESWAP_TIME", "gpu"),
-    ("CONTENT_PAINT_TIME", "content"),
-    ("GFX_OMTP_PAINT_WAIT_TIME", "content")
+#    ("CHECKERBOARD_PEAK", "gpu"),
+#    ("CHECKERBOARD_SEVERITY", "gpu"),
+#    ("CHECKERBOARD_DURATION", "gpu"),
+#    ("COMPOSITE_TIME", "gpu"),
+#    ("CONTENT_FRAME_TIME", "gpu"),
+#    ("WR_RENDER_TIME", "gpu"),
+#    ("WR_SCENEBUILD_TIME", "gpu"),
+#    ("WR_SCENESWAP_TIME", "gpu"),
+#    ("CONTENT_PAINT_TIME", "content"),
+#    ("GFX_OMTP_PAINT_WAIT_TIME", "content")
+    ("PAINT_BUILD_DISPLAYLIST_TIME", "content")
 ]
 SCALARS = [
-    ("gfx.omtp.paint_wait_ratio", "content"),
+#    ("gfx.omtp.paint_wait_ratio", "content"),
 ]
 ITERATIONS = 3
 
 # Internal constants
 
 MAX_BAR_CHARS = 25
+
 CLEAR_PING_SCRIPT = """
-const { TelemetrySend } = ChromeUtils.import("resource://gre/modules/TelemetrySend.jsm");
-TelemetrySend.clearCurrentPings();
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
+Services.telemetry.getSnapshotForHistograms("main", true);
 """
+
+GET_PING_SCRIPT = """
+const {TelemetryController} = ChromeUtils.import("resource://gre/modules/TelemetryController.jsm");
+return TelemetryController.getCurrentPingData(true);
+"""
+
 INTERACT_SCRIPT = """
 let [resolve] = arguments;
 
@@ -120,43 +131,18 @@ new Promise(async (resolve, reject) => {
     resolve();
 }).then(() => { resolve(1) });
 """
-GET_PING_SCRIPT = """
-const { TelemetryController } = ChromeUtils.import("resource://gre/modules/TelemetryController.jsm");
-return TelemetryController.getCurrentPingData(true);
-"""
 
 class SimulatorTestCase(MarionetteTestCase):
-    def setUp(self):
-        MarionetteTestCase.setUp(self)
-        self.logger = mozlog.structured.structuredlog.get_default_logger()
+    def processTelemetry(self, page):
+        print("Retrieving telemetry for page: " + page); 
+        self.marionette.set_context(self.marionette.CONTEXT_CHROME)
 
-        with open(PAGE_SET) as page_set:
-            self.pages = json.load(page_set)
+        #time.sleep(20)
+        ping = self.marionette.execute_script(GET_PING_SCRIPT)
+        self.logger.info("retrieved telemetry ping")
 
-        self.marionette.set_context('chrome')
-        self.marionette.timeout.page_load = 20
         self.marionette.execute_script(CLEAR_PING_SCRIPT)
         self.logger.info("cleared telemetry ping")
-
-    def test_simulation(self):
-        for page in self.pages * ITERATIONS:
-            with self.marionette.using_context('content'):
-                self.logger.info("loading %s" % page)
-                try:
-                    self.marionette.navigate(page)
-                    self.logger.info("loaded!")
-                    time.sleep(1)
-                    self.marionette.execute_async_script(INTERACT_SCRIPT)
-                    self.logger.info("interacted!")
-                except:
-                    self.logger.info("caught %s" % sys.exc_info()[0])
-
-    def tearDown(self):
-        self.logger.info("finished loading pages")
-        self.marionette.set_context('chrome')
-        time.sleep(10)
-        ping = self.marionette.execute_script(GET_PING_SCRIPT)
-        self.logger.info("retrieved telemetry ping\n")
 
         histograms = {}
         scalars = {}
@@ -184,7 +170,36 @@ class SimulatorTestCase(MarionetteTestCase):
             for name, histogram in sorted(histograms.items()):
                 rendered = self.renderHistogram(name, histogram)
                 print >> out, rendered
+                print(rendered)
 
+    def setUp(self):
+        MarionetteTestCase.setUp(self)
+        self.logger = mozlog.structured.structuredlog.get_default_logger()
+
+        with open(PAGE_SET) as page_set:
+            self.pages = json.load(page_set)
+
+        self.marionette.timeout.page_load = 20
+
+    def test_simulation(self):
+        for page in self.pages:
+            for x in xrange(ITERATIONS):
+                with self.marionette.using_context(self.marionette.CONTEXT_CONTENT):
+                    self.logger.info("loading %s" % page)
+                    try:
+                        self.marionette.navigate(page)
+                        self.logger.info("loaded!")
+                        time.sleep(1)
+                        self.marionette.execute_async_script(INTERACT_SCRIPT)
+                        self.logger.info("interacted!")
+                    except:
+                        self.logger.info("caught %s" % sys.exc_info()[0])
+                        print(sys.exc_info())
+
+            self.processTelemetry(page)
+
+    def tearDown(self):
+        self.logger.info("finished loading pages")
         MarionetteTestCase.tearDown(self)
 
     def findHistograms(self, ping, process, name):
